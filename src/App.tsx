@@ -1,4 +1,4 @@
-import { type PointerEvent, type TouchEvent, useEffect, useMemo, useState } from "react";
+import { type PointerEvent, type TouchEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   BarChart3,
   ChevronRight,
@@ -38,6 +38,22 @@ type Tile = {
   move: number;
   name: string;
   rate: number;
+};
+
+type RatePoint = {
+  date: string;
+  rate: number;
+};
+
+type ChartMode = "candles" | "line" | "returns" | "technicals" | "risk" | "depth";
+
+type CandlePoint = {
+  change: number;
+  close: number;
+  date: string;
+  high: number;
+  low: number;
+  open: number;
 };
 
 const BASE_KEY = "stocksfx:base";
@@ -439,6 +455,7 @@ function QuoteModal({
   tile: Tile;
 }) {
   const [history, setHistory] = useState<HistoryPoint[]>([]);
+  const [chartMode, setChartMode] = useState<ChartMode>("candles");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -604,22 +621,54 @@ function QuoteModal({
             value={`${stats.observations} rows`}
           />
           <DatasetCard
-            detail="Stats, volatility, drawdown, percentile, and z-score are calculated in the browser from the loaded history points."
+            detail="Stats, volatility, drawdown, percentile, z-score, technicals, and risk views are calculated in the browser from the loaded history points."
             label="Derived"
             value="Local"
+          />
+          <DatasetCard
+            detail="Candle view derives open from the prior daily close and estimates high/low wicks from observed daily movement because the public history feed does not provide intraday OHLC."
+            label="Candles"
+            value="Derived OHLC"
+          />
+          <DatasetCard
+            detail="Depth view is a broker-style model from current rate, volatility, and recent momentum. It is not a live FX order book."
+            label="Depth"
+            value="Modelled"
           />
         </section>
 
         <section className="deep-chart">
           <div className="chart-title">
-            <LineChart size={18} />
+            {chartMode === "depth" ? <Gauge size={18} /> : <LineChart size={18} />}
             <div>
-              <strong>120D chart</strong>
+              <strong>{chartMode === "depth" ? "Market depth" : "120D chart"}</strong>
               <span>
                 {source}/{target}
               </span>
             </div>
             {loading ? <LoaderCircle className="spin" size={18} /> : null}
+          </div>
+          <div className="chart-tabs" aria-label="Broker chart views">
+            {(["candles", "line", "returns", "technicals", "risk", "depth"] satisfies ChartMode[]).map((mode) => (
+              <button
+                className={chartMode === mode ? "active" : ""}
+                key={mode}
+                onClick={() => setChartMode(mode)}
+                type="button"
+              >
+                {mode === "candles"
+                  ? "Candles"
+                  : mode === "line"
+                    ? "Line"
+                    : mode === "returns"
+                      ? "Returns"
+                      : mode === "technicals"
+                        ? "Technicals"
+                        : mode === "risk"
+                          ? "Risk"
+                          : "Depth"}
+              </button>
+            ))}
           </div>
           {error ? (
             <div className="chart-fallback">
@@ -627,7 +676,7 @@ function QuoteModal({
               <span>{error}</span>
             </div>
           ) : (
-            <BigChart points={series} />
+            <BrokerWorkspace currentRate={activeRate} mode={chartMode} points={series} />
           )}
         </section>
       </section>
@@ -670,15 +719,83 @@ function DatasetCard({ detail, label, value }: { detail: string; label: string; 
 }
 
 function InfoTip({ text }: { text: string }) {
+  const iconRef = useRef<HTMLSpanElement | null>(null);
+  const [tooltip, setTooltip] = useState<{ left: number; placement: "bottom" | "top"; top: number } | null>(null);
+
+  function showTooltip() {
+    const icon = iconRef.current;
+    if (!icon) return;
+
+    const rect = icon.getBoundingClientRect();
+    const tooltipWidth = Math.min(280, window.innerWidth - 40);
+    const left = Math.min(Math.max(rect.left + rect.width / 2, tooltipWidth / 2 + 12), window.innerWidth - tooltipWidth / 2 - 12);
+    const showAbove = rect.bottom + 132 > window.innerHeight;
+
+    setTooltip({
+      left,
+      placement: showAbove ? "top" : "bottom",
+      top: showAbove ? rect.top - 10 : rect.bottom + 10,
+    });
+  }
+
   return (
-    <span aria-label={text} className="info-tip" tabIndex={0}>
+    <span
+      aria-label={text}
+      className="info-tip"
+      onBlur={() => setTooltip(null)}
+      onFocus={showTooltip}
+      onMouseEnter={showTooltip}
+      onMouseLeave={() => setTooltip(null)}
+      ref={iconRef}
+      tabIndex={0}
+    >
       <Info size={12} />
-      <span role="tooltip">{text}</span>
+      {tooltip ? (
+        <span
+          className={tooltip.placement === "top" ? "floating-info-tooltip above" : "floating-info-tooltip"}
+          role="tooltip"
+          style={{ left: tooltip.left, top: tooltip.top }}
+        >
+          {text}
+        </span>
+      ) : null}
     </span>
   );
 }
 
-function BigChart({ points }: { points: { date: string; rate: number }[] }) {
+function BrokerWorkspace({
+  currentRate,
+  mode,
+  points,
+}: {
+  currentRate: number;
+  mode: ChartMode;
+  points: RatePoint[];
+}) {
+  if (mode === "candles") {
+    return <CandleChart points={points} />;
+  }
+
+  if (mode === "returns") {
+    return <ReturnsView points={points} />;
+  }
+
+  if (mode === "depth") {
+    return <DepthView currentRate={currentRate} points={points} />;
+  }
+
+  if (mode === "technicals") {
+    return <TechnicalsView points={points} />;
+  }
+
+  if (mode === "risk") {
+    return <RiskView points={points} />;
+  }
+
+  return <BigChart points={points} />;
+}
+
+function BigChart({ points }: { points: RatePoint[] }) {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
 
   if (points.length < 2) {
@@ -780,6 +897,452 @@ function BigChart({ points }: { points: { date: string; rate: number }[] }) {
   );
 }
 
+function CandleChart({ points }: { points: RatePoint[] }) {
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  const candles = useMemo(() => buildCandles(points), [points]);
+
+  if (candles.length < 2) {
+    return (
+      <div className="chart-fallback">
+        <BarChart3 size={28} />
+        <span>No candle data yet</span>
+      </div>
+    );
+  }
+
+  const visibleCandles = candles.slice(-90);
+  const width = 900;
+  const height = 310;
+  const pad = 24;
+  const lows = visibleCandles.map((point) => point.low);
+  const highs = visibleCandles.map((point) => point.high);
+  const min = Math.min(...lows);
+  const max = Math.max(...highs);
+  const range = max - min || 1;
+  const innerWidth = width - pad * 2;
+  const candleGap = innerWidth / visibleCandles.length;
+  const bodyWidth = Math.max(3, Math.min(8, candleGap * 0.54));
+  const coordinates = visibleCandles.map((point, index) => {
+    const x = pad + candleGap * index + candleGap / 2;
+    const y = (value: number) => pad + (1 - (value - min) / range) * (height - pad * 2);
+    return {
+      ...point,
+      bodyBottom: y(Math.min(point.open, point.close)),
+      bodyTop: y(Math.max(point.open, point.close)),
+      highY: y(point.high),
+      lowY: y(point.low),
+      openY: y(point.open),
+      closeY: y(point.close),
+      x,
+    };
+  });
+  const activePoint = hoveredIndex === null ? null : coordinates[hoveredIndex];
+
+  function selectPoint(clientX: number, bounds: DOMRect) {
+    const x = ((clientX - bounds.left) / bounds.width) * width;
+    const index = Math.round((x - pad - candleGap / 2) / candleGap);
+    setHoveredIndex(Math.max(0, Math.min(coordinates.length - 1, index)));
+  }
+
+  function handlePointerMove(event: PointerEvent<SVGSVGElement>) {
+    selectPoint(event.clientX, event.currentTarget.getBoundingClientRect());
+  }
+
+  function handleTouch(event: TouchEvent<SVGSVGElement>) {
+    const touch = event.touches[0] ?? event.changedTouches[0];
+    if (!touch) return;
+    selectPoint(touch.clientX, event.currentTarget.getBoundingClientRect());
+  }
+
+  return (
+    <div className="interactive-chart candle-shell">
+      <svg
+        aria-label="Derived candlestick chart"
+        className="candle-chart"
+        onPointerDown={handlePointerMove}
+        onPointerLeave={() => setHoveredIndex(null)}
+        onPointerMove={handlePointerMove}
+        onTouchMove={handleTouch}
+        onTouchStart={handleTouch}
+        preserveAspectRatio="none"
+        role="img"
+        viewBox={`0 0 ${width} ${height}`}
+      >
+        <line className="chart-grid" x1={pad} x2={width - pad} y1={pad} y2={pad} />
+        <line className="chart-grid" x1={pad} x2={width - pad} y1={height / 2} y2={height / 2} />
+        <line className="chart-grid" x1={pad} x2={width - pad} y1={height - pad} y2={height - pad} />
+        {coordinates.map((point) => {
+          const rising = point.close >= point.open;
+          const bodyHeight = Math.max(2, point.bodyBottom - point.bodyTop);
+          return (
+            <g className={rising ? "candle up" : "candle down"} key={point.date}>
+              <line x1={point.x} x2={point.x} y1={point.highY} y2={point.lowY} />
+              <rect height={bodyHeight} rx="2" width={bodyWidth} x={point.x - bodyWidth / 2} y={point.bodyTop} />
+            </g>
+          );
+        })}
+        {activePoint ? (
+          <>
+            <line className="chart-focus-line" x1={activePoint.x} x2={activePoint.x} y1={pad} y2={height - pad} />
+            <circle className="chart-marker" cx={activePoint.x} cy={activePoint.closeY} r="7" />
+          </>
+        ) : null}
+      </svg>
+      {activePoint ? (
+        <div
+          className={activePoint.x > width * 0.72 ? "chart-tooltip candle-tip left" : "chart-tooltip candle-tip"}
+          style={{
+            left: `${(activePoint.x / width) * 100}%`,
+            top: `${(activePoint.closeY / height) * 100}%`,
+          }}
+        >
+          <span>{activePoint.date}</span>
+          <strong>{formatCompact(activePoint.close, 5)}</strong>
+          <em>O {formatCompact(activePoint.open, 5)}</em>
+          <em>H {formatCompact(activePoint.high, 5)}</em>
+          <em>L {formatCompact(activePoint.low, 5)}</em>
+        </div>
+      ) : null}
+      <div className="chart-range">
+        <span>{visibleCandles[0].date}</span>
+        <strong>
+          {formatCompact(min, 4)} - {formatCompact(max, 4)}
+        </strong>
+        <span>{visibleCandles[visibleCandles.length - 1].date}</span>
+      </div>
+    </div>
+  );
+}
+
+function ReturnsView({ points }: { points: RatePoint[] }) {
+  const returns = getReturns(points).slice(-90);
+
+  if (!returns.length) {
+    return (
+      <div className="chart-fallback">
+        <BarChart3 size={28} />
+        <span>No return data yet</span>
+      </div>
+    );
+  }
+
+  const width = 900;
+  const height = 250;
+  const pad = 22;
+  const maxAbs = Math.max(...returns.map((point) => Math.abs(point.returnValue))) || 1;
+  const barGap = (width - pad * 2) / returns.length;
+  const zeroY = height / 2;
+
+  return (
+    <div className="returns-view">
+      <svg aria-label="Daily return bars" className="returns-chart" preserveAspectRatio="none" role="img" viewBox={`0 0 ${width} ${height}`}>
+        <line className="chart-grid zero" x1={pad} x2={width - pad} y1={zeroY} y2={zeroY} />
+        {returns.map((point, index) => {
+          const x = pad + index * barGap;
+          const barHeight = Math.max(2, (Math.abs(point.returnValue) / maxAbs) * (height / 2 - pad));
+          const y = point.returnValue >= 0 ? zeroY - barHeight : zeroY;
+          return (
+            <rect
+              className={point.returnValue >= 0 ? "return-bar up" : "return-bar down"}
+              height={barHeight}
+              key={point.date}
+              rx="2"
+              width={Math.max(2, barGap * 0.7)}
+              x={x}
+              y={y}
+            />
+          );
+        })}
+      </svg>
+      <div className="broker-panels">
+        <BrokerDatum label="Best day" value={formatPercent(Math.max(...returns.map((point) => point.returnValue)), true)} />
+        <BrokerDatum label="Worst day" value={formatPercent(Math.min(...returns.map((point) => point.returnValue)), true)} />
+        <BrokerDatum label="Mean day" value={formatPercent(mean(returns.map((point) => point.returnValue)), true)} />
+      </div>
+    </div>
+  );
+}
+
+function DepthView({ currentRate, points }: { currentRate: number; points: RatePoint[] }) {
+  const returns = getReturns(points);
+  const volatility = standardDeviation(returns.map((point) => point.returnValue));
+  const step = Math.max(currentRate * 0.00045, currentRate * volatility * 0.18);
+  const levels = Array.from({ length: 8 }, (_, index) => {
+    const weight = 1 - index / 10;
+    const bidSize = Math.max(4, (weight + Math.sin(index * 0.9) * 0.08) * 100);
+    const askSize = Math.max(4, (weight + Math.cos(index * 0.7) * 0.08) * 100);
+    return {
+      ask: currentRate + step * (index + 1),
+      askSize,
+      bid: currentRate - step * (index + 1),
+      bidSize,
+    };
+  });
+  const maxSize = Math.max(...levels.flatMap((level) => [level.bidSize, level.askSize]));
+  const bidTotal = levels.reduce((sum, level) => sum + level.bidSize, 0);
+  const askTotal = levels.reduce((sum, level) => sum + level.askSize, 0);
+  const spread = step * 2;
+  const imbalance = (bidTotal - askTotal) / (bidTotal + askTotal || 1);
+
+  return (
+    <div className="depth-view">
+      <div className="depth-book">
+        <div className="depth-head">
+          <span>Bid model</span>
+          <strong>{formatRate(currentRate)}</strong>
+          <span>Ask model</span>
+        </div>
+        {levels.map((level) => (
+          <div className="depth-row" key={`${level.bid}-${level.ask}`}>
+            <div>
+              <span style={{ width: `${(level.bidSize / maxSize) * 100}%` }} />
+              <strong>{formatRate(level.bid)}</strong>
+            </div>
+            <em>{formatCompact(level.bidSize, 0)}</em>
+            <em>{formatCompact(level.askSize, 0)}</em>
+            <div>
+              <span style={{ width: `${(level.askSize / maxSize) * 100}%` }} />
+              <strong>{formatRate(level.ask)}</strong>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="broker-panels">
+        <BrokerDatum label="Model spread" value={formatRate(spread)} />
+        <BrokerDatum label="Book skew" tone={imbalance >= 0 ? "positive" : "negative"} value={formatPercent(imbalance, true)} />
+        <BrokerDatum label="Vol input" value={formatPercent(volatility)} />
+      </div>
+    </div>
+  );
+}
+
+function TechnicalsView({ points }: { points: RatePoint[] }) {
+  if (points.length < 30) {
+    return (
+      <div className="chart-fallback">
+        <LineChart size={28} />
+        <span>More history is needed for technicals</span>
+      </div>
+    );
+  }
+
+  const values = points.map((point) => point.rate);
+  const current = values[values.length - 1];
+  const sma20 = movingAverage(values, 20);
+  const sma50 = movingAverage(values, 50);
+  const rsi14 = getRsi(values, 14);
+  const macd = getMacd(values);
+  const momentum20 = sma20 ? current / sma20 - 1 : 0;
+  const trend = current >= sma20 && sma20 >= sma50 ? "Bullish" : current <= sma20 && sma20 <= sma50 ? "Bearish" : "Mixed";
+
+  return (
+    <div className="technicals-view">
+      <TechnicalOverlay points={points} />
+      <div className="broker-panels technical-grid">
+        <BrokerDatum label="Trend" tone={trend === "Bullish" ? "positive" : trend === "Bearish" ? "negative" : ""} value={trend} />
+        <BrokerDatum label="SMA 20" value={formatRate(sma20)} />
+        <BrokerDatum label="SMA 50" value={formatRate(sma50)} />
+        <BrokerDatum label="RSI 14" tone={rsi14 >= 70 ? "negative" : rsi14 <= 30 ? "positive" : ""} value={formatCompact(rsi14, 1)} />
+        <BrokerDatum label="MACD" tone={macd.histogram >= 0 ? "positive" : "negative"} value={formatCompact(macd.histogram, 5)} />
+        <BrokerDatum label="20D mom" tone={momentum20 >= 0 ? "positive" : "negative"} value={formatPercent(momentum20, true)} />
+      </div>
+    </div>
+  );
+}
+
+function TechnicalOverlay({ points }: { points: RatePoint[] }) {
+  const visible = points.slice(-90);
+  const width = 900;
+  const height = 270;
+  const pad = 24;
+  const values = visible.map((point) => point.rate);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+  const toPath = (series: number[]) =>
+    series
+      .map((value, index) => {
+        const x = pad + (index / (series.length - 1)) * (width - pad * 2);
+        const y = pad + (1 - (value - min) / range) * (height - pad * 2);
+        return `${index === 0 ? "M" : "L"} ${x} ${y}`;
+      })
+      .join(" ");
+  const pricePath = toPath(values);
+  const sma20Path = toPath(rollingAverage(visible.map((point) => point.rate), 20));
+  const sma50Path = toPath(rollingAverage(visible.map((point) => point.rate), 50));
+
+  return (
+    <svg aria-label="Technical overlay chart" className="technical-chart" preserveAspectRatio="none" role="img" viewBox={`0 0 ${width} ${height}`}>
+      <line className="chart-grid" x1={pad} x2={width - pad} y1={pad} y2={pad} />
+      <line className="chart-grid" x1={pad} x2={width - pad} y1={height / 2} y2={height / 2} />
+      <line className="chart-grid" x1={pad} x2={width - pad} y1={height - pad} y2={height - pad} />
+      <path className="technical-line price" d={pricePath} />
+      <path className="technical-line sma20" d={sma20Path} />
+      <path className="technical-line sma50" d={sma50Path} />
+    </svg>
+  );
+}
+
+function RiskView({ points }: { points: RatePoint[] }) {
+  const returns = getReturns(points);
+  const values = points.map((point) => point.rate);
+
+  if (returns.length < 5) {
+    return (
+      <div className="chart-fallback">
+        <Gauge size={28} />
+        <span>More history is needed for risk views</span>
+      </div>
+    );
+  }
+
+  const drawdowns = getDrawdownSeries(values).slice(-120);
+  const rollingVol = standardDeviation(returns.slice(-20).map((point) => point.returnValue)) * Math.sqrt(365);
+  const dailyMean = mean(returns.map((point) => point.returnValue));
+  const dailyVol = standardDeviation(returns.map((point) => point.returnValue));
+  const var95 = dailyMean - 1.65 * dailyVol;
+  const upsideDays = returns.filter((point) => point.returnValue >= 0).length / returns.length;
+  const rewardRisk = dailyVol ? (dailyMean / dailyVol) * Math.sqrt(365) : 0;
+
+  return (
+    <div className="risk-view">
+      <DrawdownChart points={drawdowns} />
+      <div className="broker-panels technical-grid">
+        <BrokerDatum label="20D vol" value={formatPercent(rollingVol)} />
+        <BrokerDatum label="Daily VaR 95" tone="negative" value={formatPercent(var95, true)} />
+        <BrokerDatum label="Upside days" value={formatPercent(upsideDays)} />
+        <BrokerDatum label="Reward/risk" tone={rewardRisk >= 0 ? "positive" : "negative"} value={formatCompact(rewardRisk, 2)} />
+        <BrokerDatum label="Worst close" value={formatRate(Math.min(...values))} />
+        <BrokerDatum label="Best close" value={formatRate(Math.max(...values))} />
+      </div>
+    </div>
+  );
+}
+
+function DrawdownChart({ points }: { points: number[] }) {
+  const width = 900;
+  const height = 250;
+  const pad = 22;
+  const min = Math.min(...points, 0);
+  const range = Math.abs(min) || 1;
+  const path = points
+    .map((value, index) => {
+      const x = pad + (index / (points.length - 1)) * (width - pad * 2);
+      const y = pad + (Math.abs(value) / range) * (height - pad * 2);
+      return `${index === 0 ? "M" : "L"} ${x} ${y}`;
+    })
+    .join(" ");
+  const area = `${path} L ${width - pad} ${pad} L ${pad} ${pad} Z`;
+
+  return (
+    <svg aria-label="Drawdown chart" className="drawdown-chart" preserveAspectRatio="none" role="img" viewBox={`0 0 ${width} ${height}`}>
+      <line className="chart-grid zero" x1={pad} x2={width - pad} y1={pad} y2={pad} />
+      <path className="drawdown-area" d={area} />
+      <path className="drawdown-line" d={path} />
+    </svg>
+  );
+}
+
+function BrokerDatum({ label, tone = "", value }: { label: string; tone?: "positive" | "negative" | ""; value: string }) {
+  return (
+    <div className={tone ? `broker-datum ${tone}` : "broker-datum"}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function buildCandles(points: RatePoint[]): CandlePoint[] {
+  if (!points.length) return [];
+
+  const returns = getReturns(points).map((point) => Math.abs(point.returnValue));
+  const averageMove = Math.max(mean(returns), 0.00035);
+
+  return points.map((point, index) => {
+    const open = index === 0 ? point.rate : points[index - 1].rate;
+    const close = point.rate;
+    const wick = Math.max(Math.abs(close - open) * 0.42, close * averageMove * 0.55);
+
+    return {
+      change: open ? (close - open) / open : 0,
+      close,
+      date: point.date,
+      high: Math.max(open, close) + wick,
+      low: Math.max(0, Math.min(open, close) - wick),
+      open,
+    };
+  });
+}
+
+function getReturns(points: RatePoint[]) {
+  return points
+    .slice(1)
+    .map((point, index) => {
+      const previous = points[index].rate;
+      return {
+        date: point.date,
+        returnValue: previous ? (point.rate - previous) / previous : 0,
+      };
+    })
+    .filter((point) => Number.isFinite(point.returnValue));
+}
+
+function movingAverage(values: number[], period: number) {
+  return mean(values.slice(-period));
+}
+
+function rollingAverage(values: number[], period: number) {
+  return values.map((_, index) => {
+    const start = Math.max(0, index - period + 1);
+    return mean(values.slice(start, index + 1));
+  });
+}
+
+function getRsi(values: number[], period: number) {
+  const changes = values.slice(1).map((value, index) => value - values[index]);
+  const window = changes.slice(-period);
+  const gains = window.map((change) => Math.max(0, change));
+  const losses = window.map((change) => Math.abs(Math.min(0, change)));
+  const averageGain = mean(gains);
+  const averageLoss = mean(losses);
+
+  if (averageLoss === 0) return 100;
+
+  const relativeStrength = averageGain / averageLoss;
+  return 100 - 100 / (1 + relativeStrength);
+}
+
+function getMacd(values: number[]) {
+  const macdSeries = values.map((_, index) => {
+    const slice = values.slice(0, index + 1);
+    return getEma(slice, 12) - getEma(slice, 26);
+  });
+  const macd = macdSeries[macdSeries.length - 1] ?? 0;
+  const signal = getEma(macdSeries, 9);
+
+  return {
+    histogram: macd - signal,
+    macd,
+    signal,
+  };
+}
+
+function getEma(values: number[], period: number) {
+  if (!values.length) return 0;
+
+  const multiplier = 2 / (period + 1);
+  return values.reduce((ema, value, index) => (index === 0 ? value : value * multiplier + ema * (1 - multiplier)), values[0]);
+}
+
+function getDrawdownSeries(values: number[]) {
+  let peak = values[0] ?? 0;
+
+  return values.map((value) => {
+    peak = Math.max(peak, value);
+    return peak ? value / peak - 1 : 0;
+  });
+}
+
 function getStats(points: { rate: number }[], fallback: number) {
   const values = points.length ? points.map((point) => point.rate) : [fallback];
   const open = values[0];
@@ -809,6 +1372,10 @@ function getStats(points: { rate: number }[], fallback: number) {
     range: high - low,
     zScore: rateStdDev ? (current - average) / rateStdDev : 0,
   };
+}
+
+function mean(values: number[]) {
+  return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
 }
 
 function standardDeviation(values: number[]) {

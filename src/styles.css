@@ -624,17 +624,20 @@ select option {
   inset: 0;
   z-index: 20;
   display: grid;
-  place-items: center;
+  align-items: start;
+  justify-items: center;
+  overflow-x: hidden;
+  overflow-y: auto;
   padding: var(--space-6);
   background: rgba(0, 0, 0, 0.68);
   backdrop-filter: blur(18px);
 }
 
 .quote-modal {
-  width: min(980px, 100%);
-  max-height: min(880px, calc(100vh - 44px));
-  overflow: auto;
+  width: min(1120px, 100%);
+  overflow: visible;
   padding: var(--space-5);
+  margin: 0 0 var(--space-6);
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: var(--radius-panel);
   background:
@@ -787,10 +790,8 @@ select option {
   background: rgba(255, 255, 255, 0.1);
 }
 
-.info-tip > span {
-  position: absolute;
-  bottom: calc(100% + 9px);
-  left: 50%;
+.floating-info-tooltip {
+  position: fixed;
   z-index: 6;
   width: min(280px, calc(100vw - 40px));
   padding: 10px 11px;
@@ -802,22 +803,14 @@ select option {
   font-size: 0.78rem;
   font-weight: 750;
   line-height: 1.35;
-  opacity: 0;
+  opacity: 1;
   pointer-events: none;
   text-transform: none;
-  transform: translate(-50%, 5px);
-  transition:
-    opacity 140ms ease,
-    transform 140ms ease,
-    visibility 140ms ease;
-  visibility: hidden;
+  transform: translateX(-50%);
 }
 
-.info-tip:hover > span,
-.info-tip:focus-visible > span {
-  opacity: 1;
-  transform: translate(-50%, 0);
-  visibility: visible;
+.floating-info-tooltip.above {
+  transform: translate(-50%, -100%);
 }
 
 .deep-chart {
@@ -843,16 +836,52 @@ select option {
   color: #ffffff;
 }
 
+.chart-tabs {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+  padding: var(--space-1);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-panel);
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.chart-tabs button {
+  height: 36px;
+  border: 0;
+  border-radius: 6px;
+  color: rgba(245, 247, 251, 0.58);
+  background: transparent;
+  font-size: 0.82rem;
+  font-weight: 850;
+}
+
+.chart-tabs button.active {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.14);
+}
+
 .interactive-chart {
   position: relative;
   touch-action: none;
 }
 
-.big-chart {
+.big-chart,
+.candle-chart,
+.returns-chart {
   display: block;
   width: 100%;
-  height: 320px;
   cursor: crosshair;
+}
+
+.big-chart,
+.candle-chart {
+  height: 320px;
+}
+
+.returns-chart {
+  height: 250px;
 }
 
 .big-chart polyline {
@@ -865,6 +894,217 @@ select option {
 
 .big-chart .area {
   fill: url(#chartFill);
+}
+
+.chart-grid {
+  stroke: rgba(245, 247, 251, 0.08);
+  stroke-width: 1;
+}
+
+.chart-grid.zero {
+  stroke: rgba(245, 247, 251, 0.2);
+}
+
+.candle line {
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-width: 2;
+}
+
+.candle rect {
+  fill: currentColor;
+}
+
+.candle.up {
+  color: #31d158;
+}
+
+.candle.down {
+  color: #ff453a;
+}
+
+.candle-tip em {
+  display: block;
+  color: rgba(245, 247, 251, 0.64);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.returns-view,
+.depth-view,
+.technicals-view,
+.risk-view {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.technical-chart,
+.drawdown-chart {
+  display: block;
+  width: 100%;
+  height: 270px;
+}
+
+.drawdown-chart {
+  height: 250px;
+}
+
+.technical-line {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 4;
+}
+
+.technical-line.price {
+  stroke: #31d158;
+}
+
+.technical-line.sma20 {
+  stroke: #64d2ff;
+  stroke-width: 2.5;
+}
+
+.technical-line.sma50 {
+  stroke: #ffd60a;
+  stroke-width: 2.5;
+}
+
+.drawdown-area {
+  fill: rgba(255, 69, 58, 0.18);
+}
+
+.drawdown-line {
+  fill: none;
+  stroke: #ff453a;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 4;
+}
+
+.return-bar.up {
+  fill: #31d158;
+}
+
+.return-bar.down {
+  fill: #ff453a;
+}
+
+.broker-panels {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.technical-grid {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.broker-datum {
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-panel);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.broker-datum span {
+  color: rgba(245, 247, 251, 0.54);
+  font-size: 0.72rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.broker-datum strong {
+  display: block;
+  margin-top: var(--space-1);
+  color: #ffffff;
+  font-size: 1.1rem;
+}
+
+.broker-datum.positive strong {
+  color: #31d158;
+}
+
+.broker-datum.negative strong {
+  color: #ff453a;
+}
+
+.depth-book {
+  padding: var(--space-3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-panel);
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.depth-head,
+.depth-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 72px 72px minmax(0, 1fr);
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.depth-head {
+  padding-bottom: var(--space-2);
+  color: rgba(245, 247, 251, 0.54);
+  font-size: 0.72rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.depth-head strong {
+  grid-column: span 2;
+  color: #ffffff;
+  font-size: 1.4rem;
+  text-align: center;
+}
+
+.depth-head span:last-child {
+  text-align: right;
+}
+
+.depth-row {
+  min-height: 34px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.depth-row div {
+  position: relative;
+  overflow: hidden;
+  min-height: 24px;
+  border-radius: 5px;
+}
+
+.depth-row div span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: rgba(49, 209, 88, 0.16);
+}
+
+.depth-row div:last-child span {
+  inset: 0 0 0 auto;
+  background: rgba(255, 69, 58, 0.16);
+}
+
+.depth-row strong {
+  position: relative;
+  z-index: 1;
+  display: block;
+  padding: 3px 6px;
+  color: #ffffff;
+  font-size: 0.82rem;
+}
+
+.depth-row div:last-child strong {
+  text-align: right;
+}
+
+.depth-row em {
+  color: rgba(245, 247, 251, 0.66);
+  font-size: 0.78rem;
+  font-weight: 850;
+  text-align: right;
 }
 
 .chart-focus-line {
@@ -964,7 +1204,9 @@ select option {
   .ticker-strip,
   .stats-board,
   .quant-grid,
-  .dataset-board {
+  .dataset-board,
+  .broker-panels,
+  .technical-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -1002,8 +1244,22 @@ select option {
   .watch-grid,
   .stats-board,
   .quant-grid,
-  .dataset-board {
+  .dataset-board,
+  .broker-panels {
     grid-template-columns: 1fr;
+  }
+
+  .technical-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .chart-tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .depth-head,
+  .depth-row {
+    grid-template-columns: minmax(0, 1fr) 48px 48px minmax(0, 1fr);
   }
 
   .quote-controls {
@@ -1016,11 +1272,12 @@ select option {
 
   .modal-layer {
     align-items: stretch;
+    justify-items: stretch;
     padding: 10px;
   }
 
   .quote-modal {
-    max-height: calc(100vh - 20px);
+    width: 100%;
     padding: 16px;
   }
 
