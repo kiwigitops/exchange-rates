@@ -1,14 +1,15 @@
 # Exchange Rates
 
-A small, polished exchange-rate dashboard for comparing a home currency against global currencies.
+A dark, Apple Stocks-inspired exchange-rate dashboard for comparing a home currency against global currencies.
 
 ## Features
 
+- Full-bleed Three.js market scene behind the interface.
 - Pick a home currency and amount.
 - Switch between direct mode and reverse mode.
 - Favorite currencies and keep them pinned near the top.
 - Search by currency code or name.
-- Open any currency card for a larger stat view with a recent-rate chart.
+- Open any currency card for a larger stat view with recent-rate stats and charting.
 - Uses browser local storage for preferences.
 
 ## Data Sources
