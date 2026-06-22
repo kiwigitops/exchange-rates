@@ -3,6 +3,7 @@ import {
   BarChart3,
   ChevronRight,
   Gauge,
+  Info,
   LineChart,
   LoaderCircle,
   RefreshCcw,
@@ -517,12 +518,96 @@ function QuoteModal({
         </section>
 
         <section className="stats-board">
-          <ModalStat label="Current" value={formatRate(stats.current)} />
-          <ModalStat label="Open" value={formatRate(stats.open)} />
-          <ModalStat label="High" value={formatRate(stats.high)} />
-          <ModalStat label="Low" value={formatRate(stats.low)} />
-          <ModalStat label="Average" value={formatRate(stats.average)} />
-          <ModalStat label="Range" value={formatRate(stats.range)} />
+          <ModalStat
+            detail="Most recent point in the selected history series. If history is still loading, this falls back to the live spot rate."
+            label="Current"
+            value={formatRate(stats.current)}
+          />
+          <ModalStat
+            detail="First point in the loaded 120 day history window. This is the baseline for return and drawdown calculations."
+            label="Open"
+            value={formatRate(stats.open)}
+          />
+          <ModalStat
+            detail="Highest observed rate in the loaded history window."
+            label="High"
+            value={formatRate(stats.high)}
+          />
+          <ModalStat
+            detail="Lowest observed rate in the loaded history window."
+            label="Low"
+            value={formatRate(stats.low)}
+          />
+          <ModalStat
+            detail="Arithmetic mean of every loaded rate point in the history window."
+            label="Average"
+            value={formatRate(stats.average)}
+          />
+          <ModalStat
+            detail="High minus low across the loaded history window."
+            label="Range"
+            value={formatRate(stats.range)}
+          />
+        </section>
+
+        <section className="quant-panel" aria-label="Quant metrics">
+          <div className="panel-heading">
+            <span>Quant metrics</span>
+            <InfoTip text="These are local calculations from the visible historical rate series, not additional paid market data." />
+          </div>
+          <div className="quant-grid">
+            <ModalStat
+              detail="Percent change from the first loaded point to the current loaded point."
+              label="120D return"
+              tone={stats.periodReturn >= 0 ? "positive" : "negative"}
+              value={formatPercent(stats.periodReturn, true)}
+            />
+            <ModalStat
+              detail="Annualized standard deviation of daily percentage returns in the loaded history series."
+              label="Ann. vol"
+              value={formatPercent(stats.annualizedVolatility)}
+            />
+            <ModalStat
+              detail="Worst peak-to-trough decline observed inside the loaded history window."
+              label="Max DD"
+              tone="negative"
+              value={formatPercent(stats.maxDrawdown)}
+            />
+            <ModalStat
+              detail="Where the current rate sits versus the loaded history window. 100% means it is at the top of the observed range."
+              label="Percentile"
+              value={formatPercent(stats.percentile)}
+            />
+            <ModalStat
+              detail="Distance from the average rate, measured in standard deviations of the loaded rate series."
+              label="Z-score"
+              tone={stats.zScore >= 0 ? "positive" : "negative"}
+              value={`${formatCompact(stats.zScore, 2)}σ`}
+            />
+            <ModalStat
+              detail="Number of daily observations loaded for this pair and direction."
+              label="Samples"
+              value={formatCompact(stats.observations, 0)}
+            />
+          </div>
+        </section>
+
+        <section className="dataset-board" aria-label="Dataset information">
+          <DatasetCard
+            detail="Latest conversion quote from the open ExchangeRate-API endpoint for the selected home currency."
+            label="Spot quote"
+            value={`${source}/${target}`}
+          />
+          <DatasetCard
+            detail="Daily time-series rows from Frankfurter v2 for the selected pair. Reverse mode inverts each historical rate locally."
+            label="History"
+            value={`${stats.observations} rows`}
+          />
+          <DatasetCard
+            detail="Stats, volatility, drawdown, percentile, and z-score are calculated in the browser from the loaded history points."
+            label="Derived"
+            value="Local"
+          />
         </section>
 
         <section className="deep-chart">
@@ -550,12 +635,46 @@ function QuoteModal({
   );
 }
 
-function ModalStat({ label, value }: { label: string; value: string }) {
+function ModalStat({
+  detail,
+  label,
+  tone = "",
+  value,
+}: {
+  detail: string;
+  label: string;
+  tone?: "positive" | "negative" | "";
+  value: string;
+}) {
   return (
-    <div>
-      <span>{label}</span>
+    <div className={tone ? `metric-card ${tone}` : "metric-card"}>
+      <span>
+        {label}
+        <InfoTip text={detail} />
+      </span>
       <strong>{value}</strong>
     </div>
+  );
+}
+
+function DatasetCard({ detail, label, value }: { detail: string; label: string; value: string }) {
+  return (
+    <div>
+      <span>
+        {label}
+        <InfoTip text={detail} />
+      </span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function InfoTip({ text }: { text: string }) {
+  return (
+    <span aria-label={text} className="info-tip" tabIndex={0}>
+      <Info size={12} />
+      <span role="tooltip">{text}</span>
+    </span>
   );
 }
 
@@ -668,13 +787,56 @@ function getStats(points: { rate: number }[], fallback: number) {
   const high = Math.max(...values);
   const low = Math.min(...values);
   const average = values.reduce((sum, value) => sum + value, 0) / values.length;
+  const rateStdDev = standardDeviation(values);
+  const returns = values
+    .slice(1)
+    .map((value, index) => (values[index] ? (value - values[index]) / values[index] : 0))
+    .filter((value) => Number.isFinite(value));
+  const annualizedVolatility = standardDeviation(returns) * Math.sqrt(365);
+  const percentile = values.filter((value) => value <= current).length / values.length;
 
   return {
+    annualizedVolatility,
     average,
     current,
     high,
     low,
+    maxDrawdown: getMaxDrawdown(values),
     open,
+    observations: values.length,
+    percentile,
+    periodReturn: open ? (current - open) / open : 0,
     range: high - low,
+    zScore: rateStdDev ? (current - average) / rateStdDev : 0,
   };
+}
+
+function standardDeviation(values: number[]) {
+  if (values.length < 2) return 0;
+  const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
+  const variance = values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / (values.length - 1);
+  return Math.sqrt(variance);
+}
+
+function getMaxDrawdown(values: number[]) {
+  let peak = values[0] ?? 0;
+  let drawdown = 0;
+
+  values.forEach((value) => {
+    peak = Math.max(peak, value);
+    if (peak > 0) {
+      drawdown = Math.min(drawdown, value / peak - 1);
+    }
+  });
+
+  return drawdown;
+}
+
+function formatPercent(value: number, showSign = false) {
+  return new Intl.NumberFormat(undefined, {
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 2,
+    signDisplay: showSign ? "always" : "auto",
+    style: "percent",
+  }).format(value);
 }

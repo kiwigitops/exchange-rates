@@ -157,9 +157,11 @@ export function formatRate(value: number) {
 }
 
 export function formatCompact(value: number, digits = 2) {
+  const minimumFractionDigits = Math.min(digits, Math.abs(value) < 10 && value !== 0 ? 2 : 0);
+
   return new Intl.NumberFormat(undefined, {
     maximumFractionDigits: digits,
-    minimumFractionDigits: Math.abs(value) < 10 && value !== 0 ? 2 : 0,
+    minimumFractionDigits,
   }).format(value);
 }
 
