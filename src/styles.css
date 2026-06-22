@@ -10,6 +10,9 @@
   --radius-panel: 8px;
   --panel-border: 1px solid rgba(255, 255, 255, 0.12);
   --panel-shadow: 0 24px 70px rgba(0, 0, 0, 0.32);
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --motion-fast: 140ms;
+  --motion-medium: 220ms;
   color: #f5f7fb;
   background: #020305;
   font-family:
@@ -106,6 +109,48 @@ button {
   gap: var(--space-4);
 }
 
+.feed-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.feed-pill {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 42px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 999px;
+  color: rgba(245, 247, 251, 0.78);
+  background: rgba(20, 26, 34, 0.66);
+  backdrop-filter: blur(18px);
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
+.feed-pill span {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: 0 0 18px currentColor;
+}
+
+.feed-pill.live {
+  color: #31d158;
+}
+
+.feed-pill.syncing {
+  color: #64d2ff;
+}
+
+.feed-pill.stale {
+  color: #ffd60a;
+}
+
 .tiny-label,
 .quote-controls label > span,
 .market-stat span,
@@ -144,9 +189,14 @@ h1 {
   background: rgba(20, 26, 34, 0.72);
   backdrop-filter: blur(18px);
   transition:
-    background 160ms ease,
-    color 160ms ease,
-    transform 160ms ease;
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
+}
+
+.glass-icon:disabled {
+  cursor: default;
+  opacity: 0.62;
 }
 
 .glass-icon:hover,
@@ -184,6 +234,14 @@ em {
     rgba(8, 12, 18, 0.82);
   backdrop-filter: blur(24px);
   box-shadow: var(--panel-shadow);
+}
+
+.focus-panel,
+.focus-rail,
+.quote-card,
+.quote-modal,
+.quote-controls {
+  transform: translateZ(0);
 }
 
 .focus-panel {
@@ -483,9 +541,9 @@ select option {
   backdrop-filter: blur(20px);
   box-shadow: 0 24px 54px rgba(0, 0, 0, 0.22);
   transition:
-    border-color 160ms ease,
-    transform 160ms ease,
-    background 160ms ease;
+    border-color var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out),
+    background var(--motion-fast) var(--ease-out);
 }
 
 .quote-card:hover {
@@ -1137,6 +1195,23 @@ select option {
   transform: translate(calc(-100% - 12px), -112%);
 }
 
+.chart-tooltip.floating {
+  position: fixed;
+  transform: translate(12px, calc(-100% - 12px));
+}
+
+.chart-tooltip.floating.left {
+  transform: translate(calc(-100% - 12px), calc(-100% - 12px));
+}
+
+.chart-tooltip.floating.below {
+  transform: translate(12px, 12px);
+}
+
+.chart-tooltip.floating.left.below {
+  transform: translate(calc(-100% - 12px), 12px);
+}
+
 .chart-tooltip span,
 .chart-tooltip strong {
   display: block;
@@ -1215,6 +1290,29 @@ select option {
   .app-frame {
     width: min(100% - 20px, 1480px);
     padding-top: 18px;
+  }
+
+  .top-nav {
+    align-items: flex-start;
+  }
+
+  .feed-controls {
+    flex-shrink: 0;
+  }
+
+  .feed-pill {
+    width: 42px;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .feed-pill strong {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
   }
 
   .focus-stage {
@@ -1297,5 +1395,22 @@ select option {
 
   .chart-range span:last-child {
     text-align: left;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 1ms !important;
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+  }
+
+  .quote-card:hover,
+  .glass-icon:hover,
+  .pill-button:hover {
+    transform: none;
   }
 }

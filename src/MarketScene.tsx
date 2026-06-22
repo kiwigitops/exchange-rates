@@ -6,80 +6,123 @@ type MarketSceneProps = {
   isReverse: boolean;
 };
 
+type Ribbon = {
+  baseY: number;
+  geometry: THREE.BufferGeometry;
+  line: THREE.Line;
+  phase: number;
+  positions: Float32Array;
+};
+
 export default function MarketScene({ intensity, isReverse }: MarketSceneProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
+  const intensityRef = useRef(intensity);
+  const reverseRef = useRef(isReverse);
+
+  useEffect(() => {
+    intensityRef.current = intensity;
+    reverseRef.current = isReverse;
+  }, [intensity, isReverse]);
 
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
 
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const renderer = new THREE.WebGLRenderer({
       alpha: true,
       antialias: true,
       preserveDrawingBuffer: true,
     });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.8));
     renderer.setClearColor(0x000000, 0);
     renderer.domElement.className = "market-webgl";
     host.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(48, 1, 0.1, 120);
-    camera.position.set(0, 2.1, 12.4);
+    const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 90);
+    camera.position.set(0, 2.2, 13.8);
+    camera.lookAt(0, -0.5, -4);
 
-    const baseColor = isReverse ? 0xff6b4a : 0x33d17a;
-    const accentColor = isReverse ? 0xffb86c : 0x64d2ff;
+    const directColor = new THREE.Color(0x24d18f);
+    const reverseColor = new THREE.Color(0xff6a4d);
+    const accentColor = new THREE.Color(0x74c7ff);
+    const pointDirectColor = new THREE.Color(0xb7fff1);
+    const pointReverseColor = new THREE.Color(0xffc2ad);
+    const activeColor = new THREE.Color();
 
-    const grid = new THREE.GridHelper(30, 34, 0x22c55e, 0x1b3b45);
-    grid.position.y = -2.25;
-    grid.position.z = -2.8;
-    grid.rotation.x = 0.08;
+    const grid = new THREE.GridHelper(36, 42, 0x163b34, 0x11242f);
+    grid.position.set(0, -2.55, -4.8);
+    grid.rotation.x = 0.035;
     scene.add(grid);
 
-    const ribbons: THREE.Line[] = [];
+    const gridMaterial = grid.material as THREE.Material | THREE.Material[];
+    if (Array.isArray(gridMaterial)) {
+      gridMaterial.forEach((material) => {
+        material.transparent = true;
+        material.opacity = 0.36;
+      });
+    } else {
+      gridMaterial.transparent = true;
+      gridMaterial.opacity = 0.36;
+    }
+
     const ribbonMaterial = new THREE.LineBasicMaterial({
-      color: baseColor,
-      opacity: 0.82,
+      color: directColor,
+      opacity: 0.7,
       transparent: true,
     });
     const accentMaterial = new THREE.LineBasicMaterial({
       color: accentColor,
-      opacity: 0.52,
+      opacity: 0.34,
       transparent: true,
     });
 
-    for (let row = 0; row < 9; row += 1) {
-      const points: THREE.Vector3[] = [];
-      for (let i = 0; i < 120; i += 1) {
-        const x = (i / 119 - 0.5) * 24;
-        const z = row * -0.98 + 2.4;
-        const y = Math.sin(i * 0.17 + row * 0.73) * 0.42 + row * 0.18 - 0.38;
-        points.push(new THREE.Vector3(x, y, z));
+    const ribbons: Ribbon[] = Array.from({ length: 8 }, (_, row) => {
+      const count = 112;
+      const positions = new Float32Array(count * 3);
+      const baseY = -1.45 + row * 0.34;
+      const z = 1.5 - row * 1.12;
+
+      for (let index = 0; index < count; index += 1) {
+        const offset = index * 3;
+        positions[offset] = (index / (count - 1) - 0.5) * 25;
+        positions[offset + 1] = baseY;
+        positions[offset + 2] = z;
       }
 
-      const line = new THREE.Line(
-        new THREE.BufferGeometry().setFromPoints(points),
-        row % 3 === 0 ? accentMaterial : ribbonMaterial,
-      );
-      ribbons.push(line);
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+      const line = new THREE.Line(geometry, row % 3 === 0 ? accentMaterial : ribbonMaterial);
       scene.add(line);
-    }
 
-    const barMaterial = new THREE.MeshBasicMaterial({
-      color: baseColor,
-      opacity: 0.58,
+      return {
+        baseY,
+        geometry,
+        line,
+        phase: row * 0.76,
+        positions,
+      };
+    });
+
+    const pointPositions = new Float32Array(180 * 3);
+    for (let index = 0; index < 180; index += 1) {
+      const offset = index * 3;
+      const band = index % 9;
+      pointPositions[offset] = ((index * 37) % 1000) / 1000 * 28 - 14;
+      pointPositions[offset + 1] = -1.6 + ((index * 23) % 1000) / 1000 * 5.2;
+      pointPositions[offset + 2] = -1.2 - band * 1.35 - ((index * 11) % 100) / 120;
+    }
+    const pointsGeometry = new THREE.BufferGeometry();
+    pointsGeometry.setAttribute("position", new THREE.BufferAttribute(pointPositions, 3));
+    const pointsMaterial = new THREE.PointsMaterial({
+      color: 0xb7fff1,
+      opacity: 0.22,
+      size: 0.035,
       transparent: true,
     });
-    const bars = new THREE.Group();
-    const barMeshes: THREE.Mesh<THREE.BoxGeometry, THREE.MeshBasicMaterial>[] = [];
-    for (let i = 0; i < 46; i += 1) {
-      const height = 0.18 + ((i * 17) % 11) * 0.08;
-      const bar = new THREE.Mesh(new THREE.BoxGeometry(0.055, height, 0.055), barMaterial);
-      bar.position.set((i / 45 - 0.5) * 18, -1.55 + height / 2, -4.8 - (i % 6) * 0.42);
-      barMeshes.push(bar);
-      bars.add(bar);
-    }
-    scene.add(bars);
+    const points = new THREE.Points(pointsGeometry, pointsMaterial);
+    scene.add(points);
 
     const resize = () => {
       const rect = host.getBoundingClientRect();
@@ -91,60 +134,60 @@ export default function MarketScene({ intensity, isReverse }: MarketSceneProps) 
     };
 
     let frameId = 0;
-    const clock = new THREE.Clock();
+    const renderFrame = (timeMs: number) => {
+      const time = timeMs / 1000;
+      const pulse = 0.45 + Math.min(1.35, intensityRef.current / 3.2);
+      activeColor.copy(reverseRef.current ? reverseColor : directColor);
+      ribbonMaterial.color.copy(activeColor);
+      ribbonMaterial.opacity = reverseRef.current ? 0.62 : 0.72;
+      pointsMaterial.color.copy(reverseRef.current ? pointReverseColor : pointDirectColor);
 
-    const animate = () => {
-      const time = clock.getElapsedTime();
-      const pulse = 0.55 + Math.min(1.6, intensity / 2.8);
-
-      ribbons.forEach((line, row) => {
-        const geometry = line.geometry as THREE.BufferGeometry;
-        const position = geometry.getAttribute("position") as THREE.BufferAttribute;
-
-        for (let i = 0; i < position.count; i += 1) {
-          const x = position.getX(i);
-          const y =
-            Math.sin(i * 0.18 + row * 0.66 + time * (0.72 + row * 0.025)) * 0.28 * pulse +
-            Math.cos(i * 0.07 + time * 0.5) * 0.08 +
-            row * 0.18 -
-            0.38;
-          position.setY(i, y);
-          position.setX(i, x + Math.sin(time * 0.1 + row) * 0.0008);
+      ribbons.forEach((ribbon, row) => {
+        const position = ribbon.geometry.getAttribute("position") as THREE.BufferAttribute;
+        for (let index = 0; index < position.count; index += 1) {
+          const x = ribbon.positions[index * 3];
+          const drift = Math.sin(index * 0.08 + time * 0.42 + ribbon.phase) * 0.18;
+          const wave = Math.sin(index * 0.16 + time * (0.28 + row * 0.018) + ribbon.phase) * 0.26 * pulse;
+          position.setY(index, ribbon.baseY + wave + drift);
+          position.setZ(index, ribbon.positions[index * 3 + 2] + Math.sin(time * 0.12 + row) * 0.12);
+          position.setX(index, x);
         }
-
         position.needsUpdate = true;
-        line.position.x = Math.sin(time * 0.17 + row) * 0.22;
+        ribbon.line.position.x = Math.sin(time * 0.11 + row * 0.4) * 0.18;
       });
 
-      barMeshes.forEach((child, index) => {
-        child.scale.y = 0.72 + Math.abs(Math.sin(time * 1.35 + index * 0.43)) * 1.8 * pulse;
-      });
-
-      grid.position.z = ((time * 0.72) % 1.2) - 2.6;
-      scene.rotation.y = Math.sin(time * 0.08) * 0.06;
-      scene.rotation.x = -0.08 + Math.cos(time * 0.09) * 0.025;
+      points.rotation.y = Math.sin(time * 0.05) * 0.025;
+      points.position.z = Math.sin(time * 0.16) * 0.25;
+      grid.position.z = -4.8 + ((time * 0.18) % 0.9);
+      scene.rotation.x = -0.02 + Math.sin(time * 0.06) * 0.012;
+      scene.rotation.y = Math.sin(time * 0.045) * 0.035;
 
       renderer.render(scene, camera);
-      frameId = window.requestAnimationFrame(animate);
+      if (!reduceMotion) frameId = window.requestAnimationFrame(renderFrame);
     };
 
     resize();
-    animate();
+    renderFrame(0);
     window.addEventListener("resize", resize);
 
     return () => {
       window.cancelAnimationFrame(frameId);
       window.removeEventListener("resize", resize);
       host.removeChild(renderer.domElement);
-      renderer.dispose();
       grid.geometry.dispose();
+      if (Array.isArray(gridMaterial)) {
+        gridMaterial.forEach((material) => material.dispose());
+      } else {
+        gridMaterial.dispose();
+      }
+      ribbons.forEach((ribbon) => ribbon.geometry.dispose());
       ribbonMaterial.dispose();
       accentMaterial.dispose();
-      barMaterial.dispose();
-      ribbons.forEach((line) => line.geometry.dispose());
-      barMeshes.forEach((child) => child.geometry.dispose());
+      pointsGeometry.dispose();
+      pointsMaterial.dispose();
+      renderer.dispose();
     };
-  }, [intensity, isReverse]);
+  }, []);
 
   return <div aria-hidden="true" className="market-scene" ref={hostRef} />;
 }
