@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { type PointerEvent, type TouchEvent, useEffect, useMemo, useState } from "react";
 import {
   BarChart3,
   ChevronRight,
@@ -116,6 +116,7 @@ export default function App() {
 
   const favoritesSet = new Set(favorites);
   const headline = tiles[0];
+  const focusTiles = tiles.slice(0, 6);
 
   function toggleFavorite(code: string) {
     setFavorites((current) => (current.includes(code) ? current.filter((item) => item !== code) : [code, ...current]));
@@ -138,21 +139,15 @@ export default function App() {
             </button>
           </nav>
 
-          <section className="market-hero">
-            <div className="hero-copy">
-              <p>{direction === "direct" ? "Home currency buying power" : "Reverse buying power"}</p>
-              <strong>{headline ? `${base}/${headline.code}` : base}</strong>
-              <span>{latest ? `Updated ${formatDateTime(latest.updatedAt)}` : "Loading live market data"}</span>
-            </div>
-
-            <div className="hero-price">
-              <span>{headline ? nameOf(headline.code) : "Market"}</span>
-              <strong>{headline ? formatRate(direction === "direct" ? headline.rate : 1 / headline.rate) : "0.00"}</strong>
-              <em className={headline && headline.move < 0 ? "down" : "up"}>
-                {headline ? `${headline.move >= 0 ? "+" : ""}${headline.move.toFixed(2)}%` : "+0.00%"}
-              </em>
-            </div>
-          </section>
+          <FocusStage
+            amount={amount}
+            base={base}
+            direction={direction}
+            headline={headline}
+            onOpen={setSelected}
+            tiles={focusTiles}
+            updatedAt={latest?.updatedAt}
+          />
         </header>
 
         <section className="quote-controls" aria-label="Exchange controls">
@@ -217,13 +212,6 @@ export default function App() {
           </section>
         ) : null}
 
-        <section className="ticker-strip" aria-label="Market summary">
-          <MarketStat label="Base" value={base} />
-          <MarketStat label="Mode" value={direction === "direct" ? "Mine -> World" : "World -> Mine"} />
-          <MarketStat label="Markets" value={latest ? String(Object.keys(latest.rates).length - 1) : "0"} />
-          <MarketStat label="Pinned" value={String(favorites.filter((code) => latest?.rates[code]).length)} />
-        </section>
-
         {loading ? (
           <section className="market-state large">
             <LoaderCircle className="spin" size={26} />
@@ -271,12 +259,93 @@ export default function App() {
   );
 }
 
-function MarketStat({ label, value }: { label: string; value: string }) {
+function FocusStage({
+  amount,
+  base,
+  direction,
+  headline,
+  onOpen,
+  tiles,
+  updatedAt,
+}: {
+  amount: number;
+  base: string;
+  direction: Direction;
+  headline?: Tile;
+  onOpen: (tile: Tile) => void;
+  tiles: Tile[];
+  updatedAt?: string;
+}) {
+  if (!headline) {
+    return (
+      <section className="focus-stage">
+        <div className="focus-panel empty">
+          <LoaderCircle className="spin" size={22} />
+          <strong>Opening market</strong>
+        </div>
+      </section>
+    );
+  }
+
+  const source = direction === "direct" ? base : headline.code;
+  const target = direction === "direct" ? headline.code : base;
+  const converted = direction === "direct" ? amount * headline.rate : amount / headline.rate;
+  const activeRate = direction === "direct" ? headline.rate : 1 / headline.rate;
+
   return (
-    <div className="market-stat">
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
+    <section className="focus-stage" aria-label="Focused exchange market">
+      <button className="focus-panel" onClick={() => onOpen(headline)}>
+        <div className="focus-kicker">
+          <span>{direction === "direct" ? "Focused pair" : "Reverse pair"}</span>
+          <em className={headline.move < 0 ? "down" : "up"}>
+            {headline.move >= 0 ? "+" : ""}
+            {headline.move.toFixed(2)}%
+          </em>
+        </div>
+        <strong className="focus-symbol">
+          {source}/{target}
+        </strong>
+        <span className="focus-name">{nameOf(target)}</span>
+        <MiniSpark move={headline.move} />
+        <div className="focus-bottom">
+          <div>
+            <span>
+              {formatMoney(amount, source)} into {target}
+            </span>
+            <strong>{formatMoney(converted, target)}</strong>
+          </div>
+          <div>
+            <span>Spot</span>
+            <strong>{formatRate(activeRate)}</strong>
+          </div>
+        </div>
+      </button>
+
+      <aside className="focus-rail" aria-label="Top watchlist">
+        <div className="rail-head">
+          <span>Watchlist</span>
+          <strong>{updatedAt ? formatDateTime(updatedAt) : "Live feed"}</strong>
+        </div>
+        {tiles.map((tile) => {
+          const rate = direction === "direct" ? tile.rate : 1 / tile.rate;
+          return (
+            <button key={tile.code} onClick={() => onOpen(tile)}>
+              <div>
+                <strong>{tile.code}</strong>
+                <span>{nameOf(tile.code)}</span>
+              </div>
+              <div>
+                <strong>{formatRate(rate)}</strong>
+                <em className={tile.move < 0 ? "down" : "up"}>
+                  {tile.move >= 0 ? "+" : ""}
+                  {tile.move.toFixed(2)}%
+                </em>
+              </div>
+            </button>
+          );
+        })}
+      </aside>
+    </section>
   );
 }
 
@@ -491,6 +560,8 @@ function ModalStat({ label, value }: { label: string; value: string }) {
 }
 
 function BigChart({ points }: { points: { date: string; rate: number }[] }) {
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+
   if (points.length < 2) {
     return (
       <div className="chart-fallback">
@@ -520,10 +591,38 @@ function BigChart({ points }: { points: { date: string; rate: number }[] }) {
     "Z",
   ].join(" ");
   const rising = values[values.length - 1] >= values[0];
+  const activePoint = hoveredIndex === null ? null : coordinates[hoveredIndex];
+
+  function selectPoint(clientX: number, bounds: DOMRect) {
+    const x = ((clientX - bounds.left) / bounds.width) * width;
+    const index = Math.round(((x - pad) / (width - pad * 2)) * (coordinates.length - 1));
+    setHoveredIndex(Math.max(0, Math.min(coordinates.length - 1, index)));
+  }
+
+  function handlePointerMove(event: PointerEvent<SVGSVGElement>) {
+    selectPoint(event.clientX, event.currentTarget.getBoundingClientRect());
+  }
+
+  function handleTouch(event: TouchEvent<SVGSVGElement>) {
+    const touch = event.touches[0] ?? event.changedTouches[0];
+    if (!touch) return;
+    selectPoint(touch.clientX, event.currentTarget.getBoundingClientRect());
+  }
 
   return (
-    <div>
-      <svg className={rising ? "big-chart up" : "big-chart down"} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
+    <div className="interactive-chart">
+      <svg
+        aria-label="Interactive rate chart"
+        className={rising ? "big-chart up" : "big-chart down"}
+        onPointerDown={handlePointerMove}
+        onPointerLeave={() => setHoveredIndex(null)}
+        onPointerMove={handlePointerMove}
+        onTouchMove={handleTouch}
+        onTouchStart={handleTouch}
+        preserveAspectRatio="none"
+        role="img"
+        viewBox={`0 0 ${width} ${height}`}
+      >
         <defs>
           <linearGradient id="chartFill" x1="0" x2="0" y1="0" y2="1">
             <stop offset="0%" stopColor="currentColor" stopOpacity="0.22" />
@@ -532,7 +631,25 @@ function BigChart({ points }: { points: { date: string; rate: number }[] }) {
         </defs>
         <path className="area" d={area} />
         <polyline points={line} />
+        {activePoint ? (
+          <>
+            <line className="chart-focus-line" x1={activePoint.x} x2={activePoint.x} y1={pad} y2={height - pad} />
+            <circle className="chart-marker" cx={activePoint.x} cy={activePoint.y} r="8" />
+          </>
+        ) : null}
       </svg>
+      {activePoint ? (
+        <div
+          className={activePoint.x > width * 0.72 ? "chart-tooltip left" : "chart-tooltip"}
+          style={{
+            left: `${(activePoint.x / width) * 100}%`,
+            top: `${(activePoint.y / height) * 100}%`,
+          }}
+        >
+          <span>{activePoint.date}</span>
+          <strong>{formatCompact(activePoint.rate, 5)}</strong>
+        </div>
+      ) : null}
       <div className="chart-range">
         <span>{points[0].date}</span>
         <strong>
