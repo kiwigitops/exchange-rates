@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Gauge, LoaderCircle, RefreshCcw, Search, Star } from "lucide-react";
 import MarketScene from "./MarketScene";
 import { FocusStage } from "./components/FocusStage";
@@ -27,6 +27,19 @@ export default function App() {
   const tiles = useMemo(() => buildTiles(latest, base, favorites, onlyFavorites, query), [base, favorites, latest, onlyFavorites, query]);
 
   const favoritesSet = useMemo(() => new Set(favorites), [favorites]);
+  const selectedTile = useMemo(() => {
+    if (!selected || selected.code === base) return null;
+
+    const rate = latest?.rates[selected.code];
+    if (typeof rate !== "number" || !Number.isFinite(rate) || rate <= 0) return selected;
+
+    return {
+      ...selected,
+      move: pseudoMove(selected.code, rate),
+      name: nameOf(selected.code),
+      rate,
+    };
+  }, [base, latest, selected]);
   const headline = tiles[0];
   const focusTiles = tiles.slice(0, 6);
   const marketPulse = useMemo(() => {
@@ -39,6 +52,10 @@ export default function App() {
   function toggleFavorite(code: string) {
     setFavorites((current) => (current.includes(code) ? current.filter((item) => item !== code) : [code, ...current]));
   }
+
+  useEffect(() => {
+    if (selected?.code === base) setSelected(null);
+  }, [base, selected?.code]);
 
   return (
     <main className="terminal">
@@ -160,15 +177,15 @@ export default function App() {
         ) : null}
       </section>
 
-      {selected ? (
+      {selectedTile ? (
         <QuoteModal
           amount={amount}
           base={base}
           direction={direction}
-          isFavorite={favoritesSet.has(selected.code)}
+          isFavorite={favoritesSet.has(selectedTile.code)}
           onClose={() => setSelected(null)}
-          onFavorite={() => toggleFavorite(selected.code)}
-          tile={selected}
+          onFavorite={() => toggleFavorite(selectedTile.code)}
+          tile={selectedTile}
         />
       ) : null}
     </main>
