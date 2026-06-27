@@ -16,8 +16,25 @@ function cacheKey(base: string) {
   return `${CACHE_PREFIX}${base}`;
 }
 
+function isLatestRates(value: unknown): value is LatestRates {
+  if (!value || typeof value !== "object") return false;
+
+  const candidate = value as LatestRates;
+  return (
+    typeof candidate.base === "string" &&
+    typeof candidate.provider === "string" &&
+    typeof candidate.updatedAt === "string" &&
+    typeof candidate.nextUpdateAt === "string" &&
+    Boolean(candidate.rates) &&
+    typeof candidate.rates === "object" &&
+    Object.values(candidate.rates).every((rate) => typeof rate === "number" && Number.isFinite(rate))
+  );
+}
+
 function readCachedLatest(base: string) {
-  return readSetting<CachedLatest | null>(cacheKey(base), null);
+  const cached = readSetting<CachedLatest | null>(cacheKey(base), null);
+  if (!cached || typeof cached.receivedAt !== "number" || !Number.isFinite(cached.receivedAt)) return null;
+  return isLatestRates(cached.data) ? cached : null;
 }
 
 function writeCachedLatest(base: string, data: LatestRates) {
